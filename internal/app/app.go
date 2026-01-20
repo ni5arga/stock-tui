@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,6 +45,11 @@ type historyMsg struct {
 	tr     models.TimeRange
 	data   []models.Candle
 	err    error
+}
+
+type retryHistoryMsg struct {
+	symbol string
+	tr     models.TimeRange
 }
 
 func New(cfg *models.AppConfig) (*AppModel, error) {
@@ -181,20 +187,20 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab":
 			m.cycleTimeRange()
-			return m, m.refreshCurrentChart()
+			return m, m.loadCurrentChart()
 
 		case "1":
 			m.setTimeRange(models.Range1H)
-			return m, m.refreshCurrentChart()
+			return m, m.loadCurrentChart()
 		case "2":
 			m.setTimeRange(models.Range24H)
-			return m, m.refreshCurrentChart()
+			return m, m.loadCurrentChart()
 		case "3":
 			m.setTimeRange(models.Range7D)
-			return m, m.refreshCurrentChart()
+			return m, m.loadCurrentChart()
 		case "4":
 			m.setTimeRange(models.Range30D)
-			return m, m.refreshCurrentChart()
+			return m, m.loadCurrentChart()
 
 		case "r":
 			return m, tea.Batch(m.fetchQuotes(), m.refreshCurrentChart())
@@ -219,18 +225,44 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			sel := m.watchlist.SelectedSymbol()
 			if sel != "" {
-				if _, ok := m.lastHistory[sel]; !ok {
+				cacheKey := sel + "|" + string(m.timeRange)
+				if _, ok := m.lastHistory[cacheKey]; !ok {
 					m.chart.SetLoading(true)
 					cmds = append(cmds, m.fetchHistory(sel, m.timeRange))
 				}
 			}
 		}
 
+	case retryHistoryMsg:
+		if m.watchlist.SelectedSymbol() == msg.symbol && m.timeRange == msg.tr {
+			m.chart.SetLoading(true)
+		}
+		cmds = append(cmds, m.fetchHistory(msg.symbol, msg.tr))
+
 	case historyMsg:
 		if msg.err != nil {
+			var rateLimitErr *data.RateLimitError
+			if errors.As(msg.err, &rateLimitErr) {
+				cacheKey := msg.symbol + "|" + string(msg.tr)
+				if cached, ok := m.lastHistory[cacheKey]; ok {
+					if m.watchlist.SelectedSymbol() == msg.symbol && m.timeRange == msg.tr {
+						m.chart.SetData(msg.symbol, msg.tr, cached)
+						m.chart.SetStale(rateLimitErr.RetryAfter)
+					}
+				} else {
+					m.chart.SetError(msg.err)
+				}
+
+				// Auto-retry after delay
+				cmds = append(cmds, tea.Tick(rateLimitErr.RetryAfter, func(t time.Time) tea.Msg {
+					return retryHistoryMsg{symbol: msg.symbol, tr: msg.tr}
+				}))
+				return m, tea.Batch(cmds...)
+			}
 			m.chart.SetError(msg.err)
 		} else {
-			m.lastHistory[msg.symbol] = msg.data
+			cacheKey := msg.symbol + "|" + string(msg.tr)
+			m.lastHistory[cacheKey] = msg.data
 			if m.watchlist.SelectedSymbol() == msg.symbol && m.timeRange == msg.tr {
 				m.chart.SetData(msg.symbol, msg.tr, msg.data)
 			}
@@ -249,7 +281,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	newSel := m.watchlist.SelectedSymbol()
 	if oldSel != newSel && newSel != "" {
-		if cached, ok := m.lastHistory[newSel]; ok {
+		cacheKey := newSel + "|" + string(m.timeRange)
+		if cached, ok := m.lastHistory[cacheKey]; ok {
 			m.chart.SetData(newSel, m.timeRange, cached)
 		} else {
 			m.chart.SetLoading(true)
@@ -272,7 +305,6 @@ func (m *AppModel) cycleTimeRange() {
 		}
 	}
 	m.footer.SetTimeRange(m.timeRange)
-	m.lastHistory = make(map[string][]models.Candle)
 }
 
 func (m *AppModel) setTimeRange(tr models.TimeRange) {
@@ -281,12 +313,25 @@ func (m *AppModel) setTimeRange(tr models.TimeRange) {
 	}
 	m.timeRange = tr
 	m.footer.SetTimeRange(m.timeRange)
-	m.lastHistory = make(map[string][]models.Candle)
 }
 
 func (m *AppModel) refreshCurrentChart() tea.Cmd {
 	sel := m.watchlist.SelectedSymbol()
 	if sel == "" {
+		return nil
+	}
+	m.chart.SetLoading(true)
+	return m.fetchHistory(sel, m.timeRange)
+}
+
+func (m *AppModel) loadCurrentChart() tea.Cmd {
+	sel := m.watchlist.SelectedSymbol()
+	if sel == "" {
+		return nil
+	}
+	cacheKey := sel + "|" + string(m.timeRange)
+	if cached, ok := m.lastHistory[cacheKey]; ok {
+		m.chart.SetData(sel, m.timeRange, cached)
 		return nil
 	}
 	m.chart.SetLoading(true)

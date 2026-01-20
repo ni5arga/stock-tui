@@ -2,6 +2,12 @@
 
 Real-time stock and cryptocurrency tracker for the terminal.
 
+<p align="center">
+  <img src="https://img.shields.io/badge/go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white">
+  <img src="https://img.shields.io/github/license/ni5arga/stock-tui?style=flat-square">
+  <img src="https://img.shields.io/github/actions/workflow/status/ni5arga/stock-tui/build.yml?branch=main&style=flat-square">
+</p>
+
 ![screenshot](screenshots/stock-tui.png)
 
 ## Features

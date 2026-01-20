@@ -26,7 +26,15 @@ func (e *httpError) IsRateLimit() bool {
 }
 
 func (e *httpError) IsRetryable() bool {
-	return e.StatusCode >= 500 || e.StatusCode == http.StatusTooManyRequests
+	return e.StatusCode >= 500
+}
+
+type RateLimitError struct {
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("rate limited, retry after %s", e.RetryAfter)
 }
 
 type fetchOptions struct {
@@ -71,11 +79,24 @@ func fetch(ctx context.Context, url string, opts *fetchOptions) ([]byte, error) 
 			continue
 		}
 
+		// Read body first to close properly
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			lastErr = err
 			continue
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			// Do not retry 429 inside the library, let the app handle it
+			retryStr := resp.Header.Get("Retry-After")
+			retryAfter := 60 * time.Second // default
+			if retryStr != "" {
+				if d, err := time.ParseDuration(retryStr + "s"); err == nil {
+					retryAfter = d
+				}
+			}
+			return nil, &RateLimitError{RetryAfter: retryAfter}
 		}
 
 		if resp.StatusCode != http.StatusOK {

@@ -3,6 +3,7 @@ package chart
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -21,14 +22,16 @@ const (
 var chartTypeNames = []string{"Line", "Area", "Candle"}
 
 type Model struct {
-	width     int
-	height    int
-	symbol    string
-	timeRange models.TimeRange
-	chartType ChartType
-	data      []models.Candle
-	loading   bool
-	err       error
+	width      int
+	height     int
+	symbol     string
+	timeRange  models.TimeRange
+	chartType  ChartType
+	data       []models.Candle
+	loading    bool
+	err        error
+	stale      bool
+	retryAfter time.Duration
 }
 
 func New() Model {
@@ -40,7 +43,13 @@ func New() Model {
 
 func (m Model) Init() tea.Cmd { return nil }
 
-func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) { return m, nil }
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	if m.retryAfter > 0 {
+		// Decrement retry timer if we were doing real-time updates,
+		// but since we rely on app.go to drive updates, we'll just display what we have.
+	}
+	return m, nil
+}
 
 func (m *Model) SetSize(w, h int) {
 	m.width = w
@@ -53,6 +62,15 @@ func (m *Model) SetData(symbol string, tr models.TimeRange, data []models.Candle
 	m.data = data
 	m.loading = false
 	m.err = nil
+	m.stale = false
+	m.retryAfter = 0
+}
+
+func (m *Model) SetStale(retryAfter time.Duration) {
+	m.stale = true
+	m.retryAfter = retryAfter
+	m.loading = false
+	m.err = nil
 }
 
 func (m *Model) SetLoading(loading bool) { m.loading = loading }
@@ -60,6 +78,7 @@ func (m *Model) SetLoading(loading bool) { m.loading = loading }
 func (m *Model) SetError(err error) {
 	m.err = err
 	m.loading = false
+	m.stale = false
 }
 
 func (m *Model) CycleChartType() {
@@ -138,6 +157,12 @@ func (m Model) render() string {
 		fmt.Sprintf("$%.2f (%+.2f%%)", lastP, pct)))
 	b.WriteString("  ")
 	b.WriteString(lipgloss.NewStyle().Foreground(styles.ColorSubtext).Render("[" + m.ChartTypeName() + "]"))
+
+	if m.stale {
+		warnStyle := lipgloss.NewStyle().Foreground(styles.ColorWarning).Bold(true)
+		b.WriteString("  ")
+		b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ RATE LIMITED (Refreshing in %s)", m.retryAfter.Round(time.Second))))
+	}
 	b.WriteString("\n\n")
 
 	// Build canvas (plain runes, style later per-row)
