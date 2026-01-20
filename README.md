@@ -90,12 +90,16 @@ symbols = [
 |-----|--------|
 | `j` / `↓` | Move down in watchlist |
 | `k` / `↑` | Move up in watchlist |
+| `/` | Search/filter symbols |
+| `Esc` | Exit search mode |
+| `s` | Cycle sort mode (Name/Price/Change%) |
+| `S` | Toggle sort direction (Asc/Desc) |
 | `Tab` | Cycle time range |
 | `1` | 1 hour range |
 | `2` | 24 hour range |
 | `3` | 7 day range |
 | `4` | 30 day range |
-| `c` | Cycle chart type (Line/Area/Bars/Dots) |
+| `Tab` | Cycle chart type (Line/Area/Candle) |
 | `r` | Refresh data |
 | `?` | Toggle help |
 | `q` | Quit |
