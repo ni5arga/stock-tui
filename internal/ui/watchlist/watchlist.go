@@ -123,14 +123,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			// Check if click is within bounds
+			// Check if click is within bounds of the pane
 			if msg.X >= 0 && msg.X < m.width && msg.Y >= 0 && msg.Y < m.height {
-				// Account for top border (1 line) and adjust for reported offset
-				// Previous: msg.Y - 1. User reported selecting 2 steps upwards (Index-2).
-				// Fix: Add 2 to the result -> (msg.Y - 1) + 2 = msg.Y + 1.
-				index := msg.Y + 1 + m.list.Paginator.Page*m.list.Paginator.PerPage
-				if index >= 0 && index < len(m.list.Items()) {
-					m.list.Select(index)
+				// Derive the vertical offset of the list within the pane instead of using a hardcoded value.
+				// The list height is set relative to the pane height in SetSize; use that relationship here.
+				listHeight := m.list.Height()
+				if listHeight > 0 && listHeight <= m.height {
+					// Assume vertical chrome (border/padding) is split evenly above and below the list.
+					topOffset := (m.height - listHeight) / 2
+					if topOffset < 0 {
+						topOffset = 0
+					}
+					// Only handle clicks that fall within the list's vertical area.
+					if msg.Y >= topOffset && msg.Y < topOffset+listHeight {
+						localIndex := msg.Y - topOffset
+						index := localIndex + m.list.Paginator.Page*m.list.Paginator.PerPage
+						if index >= 0 && index < len(m.list.Items()) {
+							m.list.Select(index)
+						}
+					}
 				}
 			}
 		}
