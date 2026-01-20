@@ -143,7 +143,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			// Footer click (Cycle time range)
-			if msg.Y >= m.height-1 {
+			if msg.Y == m.height-1 {
 				m.cycleTimeRange()
 				return m, m.refreshCurrentChart()
 			}
